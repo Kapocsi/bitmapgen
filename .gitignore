@@ -1,0 +1,21 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+BlackBox.png
+Sprite-0006.png
+bad_size.png
+bitmaps.c
+bitmaps.h
+fonts/depixel
+fonts/out
+fonts/.DS_Store
+.DS_Store
+depixel
+out
