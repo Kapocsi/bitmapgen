@@ -1,21 +1,22 @@
-from sys import stderr
-from typing import Any, Optional
+import argparse
+import re
+from typing import Optional
+from pathlib import Path
+
 from PIL import Image
 import numpy as np
-from pathlib import Path
-import re
-import argparse
+
+from util import eprint
+from const import HEADER_HEAD, HEADER_TAIL
 
 
-X_SIZE_ALIGN = 8
-
-
-def eprint(*args, **kwargs):
-    merged_kwargs: Any = {"file": stderr} | kwargs
-    print(*args, **merged_kwargs)
+X_SIZE_ALIGN = 32
 
 
 def to_camel_case_identifier(s):
+    """
+    Convert string to valid camel case identifier
+    """
     # Remove invalid characters (keep only letters, numbers, and underscores)
     s = re.sub(r"[^a-zA-Z0-9_]", " ", s)
 
@@ -36,18 +37,47 @@ def to_camel_case_identifier(s):
 
 
 class BitMap:
+    """
+    A class to represent a bitmap image and convert it into a packed binary format
+    for use in C-style structures.
+
+    Attributes:
+        bitmap (Optional[np.ndarray]): The packed binary representation of the image.
+        name (str): The name of the image file without extension.
+        width (Optional[int]): The width of the processed bitmap.
+        height (Optional[int]): The height of the processed bitmap.
+    """
+
     bitmap: Optional[np.ndarray] = None
+    path: str
     name = None
     width: Optional[int] = None
     height: Optional[int] = None
 
-    def __init__(self, image_path) -> None:
+    def __init__(self, image_path: str) -> None:
+        """
+        Initializes a BitMap instance by processing an image file.
+
+        Args:
+            image_path (str): The path to the image file to be processed.
+        """
         self.name = Path(image_path).with_suffix("").name
+        self.path = image_path
+        self.ident = to_camel_case_identifier(self.name)
 
-        with Image.open(image_path) as image:
-            self.createBitMap(image)
+        with Image.open(self.path) as image:
+            self.create_bit_map(image)
 
-    def createBitMap(self, image):
+    def create_bit_map(self, image: Image.Image) -> None:
+        """
+        Converts the given image into a packed bitmap representation.
+
+        The image is processed into a binary format where each bit represents a pixel.
+        If the image is not byte-aligned, padding is added to the width.
+
+        Args:
+            image (Image.Image): The image to be processed.
+        """
         image_arr = np.array(image)
 
         y, x, *_ = image_arr.shape
@@ -63,9 +93,7 @@ class BitMap:
         diff = new_x - x
 
         padded = np.pad(bool_arr, ((0, 0), (diff // 2, diff // 2 + diff % 2)))
-
         packed = np.packbits(padded)
-
         packed = np.reshape(packed, (len(packed) // 4, 4))
         w = 256 ** np.arange(0, 4)[::-1]
         packed = np.sum(packed * w, axis=1)
@@ -75,30 +103,49 @@ class BitMap:
         self.bitmap = packed
 
     def c_repr(self) -> str:
-        assert self.bitmap is not None
+        """
+        Generates the C representation of the bitmap data.
 
-        ident = to_camel_case_identifier(self.name)
-
+        Returns:
+            str: A string representing the bitmap in a C header format.
+        """
         return f"""
         {self.arr_repr()}
-        const BitMap {ident} = {self.struct_repr()};
+        const BitMap {self.ident} = {self.struct_repr()};
             """
 
     def h_repr(self) -> str:
-        ident = to_camel_case_identifier(self.name)
-        return f"const BitMap {ident};"
+        """
+        Generates the header file declaration for the bitmap.
+
+        Returns:
+            str: A string declaring the bitmap in a C header file.
+        """
+        return f"const BitMap {self.ident};"
 
     def struct_repr(self, ending=";") -> str:
-        ident = to_camel_case_identifier(self.name)
-        return f"{{ _{ident},{self.width},{self.height} }}{ending}"
+        """
+        Generates the struct representation of the bitmap.
+
+        Args:
+            ending (str, optional): The string to append at the end of the struct. Defaults to ";".
+
+        Returns:
+            str: A C-style struct representation of the bitmap.
+        """
+        return f"{{ _{self.ident},{self.width},{self.height} }}{ending}"
 
     def arr_repr(self) -> str:
+        """
+        Generates the packed array representation of the bitmap.
+
+        Returns:
+            str: A C-style static array representation of the bitmap data.
+        """
         assert self.bitmap is not None
 
-        ident = to_camel_case_identifier(self.name)
-
         return f"""
-static const u32 _{ident}[{len(self.bitmap)}] =
+static const u32 _{self.ident}[{len(self.bitmap)}] =
         {{
 {",".join(hex(x) for x in self.bitmap)}
         }};
@@ -106,6 +153,9 @@ static const u32 _{ident}[{len(self.bitmap)}] =
 
 
 def main():
+    """
+    Converts images passed via a CLI to bitmaps.
+    """
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-oc", "--c_output", default="bitmaps.c")
@@ -114,35 +164,29 @@ def main():
 
     args = parser.parse_args()
 
-    c_output = open(args.c_output, "w+")
-    h_output = open(args.h_output, "w+")
-
     input_files = args.input_files
 
     bitmaps = [BitMap(path) for path in input_files]
-    print('#include "bitmaps.h"', file=c_output)
-    print("\n".join(b.c_repr() for b in bitmaps), file=c_output)
 
-    print(
-        """
-/**
- * @file bitmaps.h
- * @brief Declares external bitmap objects.
- */
-
-#ifndef BITMAPS_H
-#define BITMAPS_H
-
-#include "bitmap.h"
-#include "global.h"
-#include "raster.h"
-        """,
-        file=h_output,
+    h_contents = "\n".join(
+        [
+            HEADER_HEAD,
+            "\n".join(b.h_repr() for b in bitmaps),
+            HEADER_TAIL,
+        ]
+    )
+    c_contents = "\n".join(
+        [
+            f'#include "{Path(args.h_output).name}"',
+            "\n".join(b.c_repr() for b in bitmaps),
+        ]
     )
 
-    print("\n".join(b.h_repr() for b in bitmaps), file=h_output)
+    with open(args.c_output, "w+", encoding="ascii") as f:
+        f.write(c_contents)
 
-    print("#endif", file=h_output)
+    with open(args.h_output, "w+", encoding="ascii") as f:
+        f.write(h_contents)
 
 
 if __name__ == "__main__":
