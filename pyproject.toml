@@ -1,3 +1,4 @@
+
 [project]
 name = "BitMapGen"
 version = "0.1.0"
@@ -11,3 +12,6 @@ dependencies = [
 
 [project.scripts]
 bitmapgen = "main:main"
+
+[tool.uv]
+package=true
