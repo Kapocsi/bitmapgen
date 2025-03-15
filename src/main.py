@@ -10,7 +10,7 @@ from util import eprint
 from const import HEADER_HEAD, HEADER_TAIL
 
 
-X_SIZE_ALIGN = 32
+X_SIZE_ALIGN = 8
 
 
 def to_camel_case_identifier(s):
@@ -121,7 +121,7 @@ class BitMap:
         Returns:
             str: A string declaring the bitmap in a C header file.
         """
-        return f"const BitMap {self.ident};"
+        return f"extern const BitMap {self.ident};"
 
     def struct_repr(self, ending=";") -> str:
         """
