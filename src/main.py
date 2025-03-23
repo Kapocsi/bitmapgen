@@ -84,7 +84,7 @@ class BitMap:
         if len(image_arr.shape) == 3:
             bool_arr = np.sum(image_arr, axis=2) > 128
         else:
-            bool_arr = image_arr != 0
+            bool_arr = image_arr == 0
 
         if x % X_SIZE_ALIGN != 0:
             eprint(f"{self.name or '<no name>'} is not byte aligned: padding width")
